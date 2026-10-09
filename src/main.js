@@ -7,6 +7,7 @@ app.innerHTML = `
     <button id="undoButton">Undo</button>
     <button id="redoButton">Redo</button>
     <button id="clearButton">Clear</button>
+    <button id="eraserButton">Stroke Eraser</button>
 
     <label>
       Stroke width:
@@ -28,6 +29,7 @@ const ctx = canvas.getContext('2d')
 const undoButton = document.querySelector('#undoButton')
 const redoButton = document.querySelector('#redoButton')
 const clearButton = document.querySelector('#clearButton')
+const eraserButton = document.querySelector('#eraserButton')
 const strokeWidthInput = document.querySelector('#strokeWidth')
 
 undoButton.addEventListener('click', undo)
@@ -38,16 +40,14 @@ strokeWidthInput.addEventListener('input', (event) => {
 })
 
 function clearCanvas() {
+  if (strokes.length === 0) return
+
   strokes.length = 0
-  redoStrokes.length = 0
   currentStroke = null
 
-  ctx.clearRect(
-    0,
-    0,
-    canvas.width,
-    canvas.height
-  )
+  redrawCanvas()
+
+  saveHistory()
 
   console.log('After clear:', strokes)
 }
@@ -67,12 +67,35 @@ resizeCanvas()
 window.addEventListener('resize', resizeCanvas)
 
 let isDrawing = false
-
-const strokes = []
-const redoStrokes = []
-
+let isErasing = false
 let currentStroke = null
 let strokeWidth = 4
+
+const strokes = []
+
+const history = []
+let historyIndex = -1
+saveHistory()
+
+function saveHistory() {
+  const snapshot = structuredClone(strokes)
+
+  history.splice(historyIndex + 1)
+
+  history.push(snapshot)
+
+  historyIndex++
+}
+
+function restoreHistory() {
+  strokes.length = 0
+
+  strokes.push(
+    ...structuredClone(history[historyIndex])
+  )
+
+  redrawCanvas()
+}
 
 function redrawCanvas() {
   ctx.clearRect(
@@ -104,23 +127,19 @@ function redrawCanvas() {
 }
 
 function undo() {
-  if (strokes.length === 0) return
+  if (historyIndex <= 0) return
 
-  const stroke = strokes.pop()
+  historyIndex--
 
-  redoStrokes.push(stroke)
-
-  redrawCanvas()
+  restoreHistory()
 }
 
 function redo() {
-  if (redoStrokes.length === 0) return
+  if (historyIndex >= history.length - 1) return
 
-  const stroke = redoStrokes.pop()
+  historyIndex++
 
-  strokes.push(stroke)
-
-  redrawCanvas()
+  restoreHistory()
 }
 
 function getCanvasPoint(event) {
@@ -132,7 +151,49 @@ function getCanvasPoint(event) {
   }
 }
 
+function eraseStroke(event) {
+  const point = getCanvasPoint(event)
+
+  const eraserRadius = 15
+
+  for (let i = strokes.length - 1; i >= 0; i--) {
+    const stroke = strokes[i]
+
+    for (const strokePoint of stroke.points) {
+      const dx = strokePoint.x - point.x
+      const dy = strokePoint.y - point.y
+
+      const distance = Math.sqrt(
+        dx * dx + dy * dy
+      )
+
+      if (distance <= eraserRadius) {
+
+        strokes.splice(i, 1)
+
+        redrawCanvas()
+
+        saveHistory()
+
+        return
+      }
+    }
+  }
+}
+
+eraserButton.addEventListener('click', () => {
+  isErasing = !isErasing
+
+  eraserButton.textContent =
+    isErasing ? 'Exit Eraser' : 'Stroke Eraser'
+})
+
 canvas.addEventListener('pointerdown', (event) => {
+  if (isErasing) {
+    eraseStroke(event)
+    return
+  }
+
   isDrawing = true
 
   canvas.setPointerCapture(event.pointerId)
@@ -180,7 +241,7 @@ function finishStroke(event) {
 
   if (currentStroke && currentStroke.points.length > 0) {
     strokes.push(currentStroke)
-    redoStrokes.length = 0
+    saveHistory()
   }
 
   currentStroke = null
