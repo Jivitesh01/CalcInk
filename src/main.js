@@ -7,7 +7,9 @@ app.innerHTML = `
     <button id="undoButton">Undo</button>
     <button id="redoButton">Redo</button>
     <button id="clearButton">Clear</button>
+    <button id="penButton">Pen</button>
     <button id="eraserButton">Stroke Eraser</button>
+    <button id="pixelEraserButton">Pixel Eraser</button>
 
     <label>
       Stroke width:
@@ -29,7 +31,8 @@ const ctx = canvas.getContext('2d')
 const undoButton = document.querySelector('#undoButton')
 const redoButton = document.querySelector('#redoButton')
 const clearButton = document.querySelector('#clearButton')
-const eraserButton = document.querySelector('#eraserButton')
+const penButton = document.querySelector('#penButton')
+const pixelEraserButton = document.querySelector('#pixelEraserButton')
 const strokeWidthInput = document.querySelector('#strokeWidth')
 
 undoButton.addEventListener('click', undo)
@@ -67,7 +70,8 @@ resizeCanvas()
 window.addEventListener('resize', resizeCanvas)
 
 let isDrawing = false
-let isErasing = false
+let isPixelErasing = false
+let activeTool = 'pen'
 let currentStroke = null
 let strokeWidth = 4
 
@@ -181,18 +185,95 @@ function eraseStroke(event) {
   }
 }
 
-eraserButton.addEventListener('click', () => {
-  isErasing = !isErasing
+function finishPixelErasing(event) {
+  if (!isPixelErasing) return
 
-  eraserButton.textContent =
-    isErasing ? 'Exit Eraser' : 'Stroke Eraser'
+  isPixelErasing = false
+
+  saveHistory()
+
+  if (canvas.hasPointerCapture(event.pointerId)) {
+    canvas.releasePointerCapture(event.pointerId)
+  }
+}
+
+function erasePixels(point) {
+  const eraserRadius = 15
+  const updatedStrokes = []
+
+  for (const stroke of strokes) {
+    let remainingPoints = []
+
+    for (const strokePoint of stroke.points) {
+      const dx = strokePoint.x - point.x
+      const dy = strokePoint.y - point.y
+
+      const distance = Math.sqrt(dx * dx + dy * dy)
+
+      if (distance <= eraserRadius + stroke.width / 2) {
+        if (remainingPoints.length >= 2) {
+          updatedStrokes.push({
+            points: remainingPoints,
+            width: stroke.width
+          })
+        }
+
+        remainingPoints = []
+      } else {
+        remainingPoints.push(strokePoint)
+      }
+    }
+
+    if (remainingPoints.length >= 2) {
+      updatedStrokes.push({
+        points: remainingPoints,
+        width: stroke.width
+      })
+    }
+  }
+
+  strokes.length = 0
+  strokes.push(...updatedStrokes)
+
+  redrawCanvas()
+}
+
+function selectTool(tool) {
+  activeTool = tool
+
+  penButton.disabled = tool === 'pen'
+  eraserButton.disabled = tool === 'strokeEraser'
+  pixelEraserButton.disabled = tool === 'pixelEraser'
+}
+
+penButton.addEventListener('click', () => {
+  selectTool('pen')
 })
 
+eraserButton.addEventListener('click', () => {
+  selectTool('strokeEraser')
+})
+
+pixelEraserButton.addEventListener('click', () => {
+  selectTool('pixelEraser')
+})
+
+selectTool('pen')
+
 canvas.addEventListener('pointerdown', (event) => {
-  if (isErasing) {
+  if (activeTool === 'strokeEraser') {
     eraseStroke(event)
     return
   }
+
+if (activeTool === 'pixelEraser') {
+  isPixelErasing = true
+
+  canvas.setPointerCapture(event.pointerId)
+
+  erasePixels(getCanvasPoint(event))
+  return
+}
 
   isDrawing = true
 
@@ -213,7 +294,13 @@ canvas.addEventListener('pointerdown', (event) => {
   ctx.moveTo(point.x, point.y)
 })
 
+
 canvas.addEventListener('pointermove', (event) => {
+  if (isPixelErasing) {
+    erasePixels(getCanvasPoint(event))
+    return
+  }
+
   if (!isDrawing) return
 
   const point = getCanvasPoint(event)
@@ -225,12 +312,22 @@ canvas.addEventListener('pointermove', (event) => {
 })
 
 canvas.addEventListener('pointerup', (event) => {
+  if (isPixelErasing) {
+    finishPixelErasing(event)
+    return
+  }
+
   finishStroke(event)
 
   console.log('Current strokes:', strokes)
 })
 
 canvas.addEventListener('pointercancel', (event) => {
+  if (isPixelErasing) {
+    finishPixelErasing(event)
+    return
+  }
+
   finishStroke(event)
 })
 
