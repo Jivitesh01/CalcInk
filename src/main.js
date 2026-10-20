@@ -59,18 +59,31 @@ function resizeCanvas() {
   const rect = canvas.getBoundingClientRect()
   const dpr = window.devicePixelRatio || 1
 
-  canvas.width = rect.width * dpr
-  canvas.height = rect.height * dpr
+  const width = Math.round(rect.width * dpr)
+  const height = Math.round(rect.height * dpr)
+
+  const sizeChanged =
+    canvas.width !== width ||
+    canvas.height !== height
+
+  if (sizeChanged) {
+    canvas.width = width
+    canvas.height = height
+  }
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+  if (sizeChanged) {
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    redrawCanvas()
+  }
 }
 
-resizeCanvas()
-
-window.addEventListener('resize', resizeCanvas)
 
 let isDrawing = false
 let isPixelErasing = false
+let activePointerId = null
 let activeTool = 'pen'
 let currentStroke = null
 let strokeWidth = 4
@@ -80,6 +93,9 @@ const strokes = []
 const history = []
 let historyIndex = -1
 saveHistory()
+resizeCanvas()
+
+window.addEventListener('resize', resizeCanvas)
 
 function saveHistory() {
   const snapshot = structuredClone(strokes)
@@ -261,6 +277,11 @@ pixelEraserButton.addEventListener('click', () => {
 selectTool('pen')
 
 canvas.addEventListener('pointerdown', (event) => {
+  if (activePointerId !== null) return
+
+  activePointerId = event.pointerId
+  canvas.setPointerCapture(event.pointerId)
+
   if (activeTool === 'strokeEraser') {
     eraseStroke(event)
     return
@@ -296,6 +317,8 @@ if (activeTool === 'pixelEraser') {
 
 
 canvas.addEventListener('pointermove', (event) => {
+  if (event.pointerId !== activePointerId) return
+
   if (isPixelErasing) {
     erasePixels(getCanvasPoint(event))
     return
@@ -311,24 +334,36 @@ canvas.addEventListener('pointermove', (event) => {
   ctx.stroke()
 })
 
-canvas.addEventListener('pointerup', (event) => {
+function endPointerInteraction(event) {
+  if (event.pointerId !== activePointerId) return
+
   if (isPixelErasing) {
     finishPixelErasing(event)
-    return
+  } else if (isDrawing) {
+    finishStroke(event)
   }
 
-  finishStroke(event)
+  if (canvas.hasPointerCapture(event.pointerId)) {
+    canvas.releasePointerCapture(event.pointerId)
+  }
 
-  console.log('Current strokes:', strokes)
-})
+  activePointerId = null
+}
 
-canvas.addEventListener('pointercancel', (event) => {
+canvas.addEventListener('pointerup', endPointerInteraction)
+
+canvas.addEventListener('pointercancel', endPointerInteraction)
+
+canvas.addEventListener('lostpointercapture', (event) => {
+  if (event.pointerId !== activePointerId) return
+
   if (isPixelErasing) {
     finishPixelErasing(event)
-    return
+  } else if (isDrawing) {
+    finishStroke(event)
   }
 
-  finishStroke(event)
+  activePointerId = null
 })
 
 function finishStroke(event) {
