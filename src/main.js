@@ -1,4 +1,10 @@
 import './style.css'
+import { getBoundingBox } from './recognition/boundingBox.js'
+import { toModelStrokes } from './recognition/strokeAdapter.js'
+import {
+  loadRecognitionModel,
+  recognizeMath
+} from './recognition/modelLoader.js'
 
 const app = document.querySelector('#app')
 
@@ -10,6 +16,7 @@ app.innerHTML = `
     <button id="penButton">Pen</button>
     <button id="eraserButton">Stroke Eraser</button>
     <button id="pixelEraserButton">Pixel Eraser</button>
+    <button id="recognizeButton">Recognize Math</button>
 
     <label>
       Stroke width:
@@ -34,6 +41,7 @@ const clearButton = document.querySelector('#clearButton')
 const penButton = document.querySelector('#penButton')
 const pixelEraserButton = document.querySelector('#pixelEraserButton')
 const strokeWidthInput = document.querySelector('#strokeWidth')
+const recognizeButton = document.querySelector('#recognizeButton')
 
 undoButton.addEventListener('click', undo)
 redoButton.addEventListener('click', redo)
@@ -366,6 +374,37 @@ canvas.addEventListener('lostpointercapture', (event) => {
   activePointerId = null
 })
 
+recognizeButton.addEventListener('click', async () => {
+  if (strokes.length === 0) {
+    console.log('Nothing to recognize')
+    return
+  }
+
+  recognizeButton.disabled = true
+  recognizeButton.textContent = 'Recognizing...'
+
+  try {
+    const modelStrokes = toModelStrokes(strokes)
+
+    const result = await recognizeMath(modelStrokes)
+
+    if (result === null) {
+      console.log('Not enough handwriting to recognize')
+      return
+    }
+
+    console.log('Recognized LaTeX:', result.latex)
+    console.log('Inference time:', result.totalMs, 'ms')
+
+  } catch (error) {
+    console.error('Recognition failed:', error)
+
+  } finally {
+    recognizeButton.disabled = false
+    recognizeButton.textContent = 'Recognize Math'
+  }
+})
+
 function finishStroke(event) {
   if (!isDrawing) return
 
@@ -384,3 +423,11 @@ function finishStroke(event) {
 
   console.log('Total strokes:', strokes.length)
 }
+
+loadRecognitionModel()
+  .then(() => {
+    console.log('CalcInk recognition model loaded successfully!')
+  })
+  .catch((error) => {
+    console.error('Model loading failed:', error)
+  })
